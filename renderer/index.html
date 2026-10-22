@@ -8,7 +8,8 @@
 <link rel="icon" type="image/png" href="icon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Hanken+Grotesk:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: one centered column, profile header on top, stat strip, heatmap, two ranked lists, insights table. */
+/* Layout: one centered column. Update banner, profile header with source switcher, stat strip,
+   recent usage, heatmap, ranked lists, usage patterns, insights table, footer. */
 :root {
   --bg: #f6f4f1;
   --panel: #ffffff;
@@ -38,10 +39,13 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+/* Author display rules (.loader, .wrap, .srcline) would otherwise beat the UA [hidden] rule and
+   leave hidden panels on screen. */
+[hidden] { display: none !important; }
 .drag { position: fixed; top: 0; left: 0; right: 0; height: 32px; -webkit-app-region: drag; z-index: 5; }
 body {
   background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
-  padding-block: 40px 72px;
+  padding-block: 40px 56px;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
@@ -51,23 +55,37 @@ button:focus-visible, input:focus-visible, label:focus-within { outline: 2px sol
 h2 { font-family: var(--font-display); font-weight: 600; font-size: 18px; margin: 0; letter-spacing: -0.01em; }
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
+/* update banner */
+.banner { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 14px; background: var(--panel); padding: 12px 16px; font-size: 14px; }
+.banner .grow { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 6px; }
+.banner .sub { color: var(--mute); font-size: 13px; }
+.banner .bar { width: 100%; height: 4px; }
+
 /* profile */
 .profile { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding-top: 8px; }
 .avatar { width: 96px; height: 96px; border-radius: 50%; background: var(--avatar); color: #fff; display: grid; place-items: center; font-family: var(--font-display); font-weight: 600; font-size: 40px; margin-bottom: 10px; }
 .name { font-family: var(--font-display); font-weight: 600; font-size: 28px; letter-spacing: -0.02em; background: none; border: 0; border-bottom: 1px dashed transparent; text-align: center; color: var(--fg); width: 100%; max-width: 420px; padding: 2px 0; }
 .handle { font-size: 15px; color: var(--mute); background: none; border: 0; text-align: center; width: 100%; max-width: 420px; font-family: var(--font-body); padding: 2px 0; }
 .name:hover, .handle:hover, .name:focus, .handle:focus { border-bottom-color: var(--line); outline: none; }
-.srcline { display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: center; align-items: center; margin-top: 12px; font-size: 13px; color: var(--mute); }
+.seg { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); margin-top: 14px; }
+.seg button { background: none; border: 0; color: var(--mute); padding: 5px 14px; border-radius: 999px; font-size: 14px; font-weight: 500; }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.srcline { display: flex; flex-wrap: wrap; gap: 8px 10px; justify-content: center; align-items: center; margin-top: 12px; font-size: 13px; color: var(--mute); }
 .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 500; }
 .btn:hover { border-color: var(--mute); }
+.btn:disabled { opacity: .5; cursor: default; }
 .btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); padding: 10px 20px; font-size: 14px; }
+.btn.small.primary { padding: 6px 14px; font-size: 13px; }
+.link { background: none; border: 0; padding: 0; color: var(--mute); text-decoration: underline; text-underline-offset: 3px; font-size: 13px; }
+.link:hover { color: var(--fg); }
 
-/* loader */
+/* loader and empty states */
 .loader { border: 1px dashed var(--line); border-radius: 20px; padding: 32px 24px; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; background: var(--panel); }
 .loader h2 { font-size: 22px; }
-.loader p { margin: 0; max-width: 52ch; color: var(--mute); }
+.loader p { margin: 0; max-width: 56ch; color: var(--mute); }
+.loader ol { margin: 0; padding-left: 20px; text-align: left; max-width: 52ch; color: var(--mute); display: flex; flex-direction: column; gap: 4px; }
 .loader code { font-family: var(--font-mono); font-size: 13px; background: var(--bg); border: 1px solid var(--line); padding: 1px 6px; border-radius: 6px; color: var(--fg); }
-.loader .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.loader .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; align-items: center; }
 .bar { width: min(360px, 100%); height: 6px; border-radius: 3px; background: var(--h0); overflow: hidden; }
 .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
 .msg { font-size: 13px; color: var(--mute); min-height: 20px; }
@@ -86,6 +104,14 @@ h2 { font-family: var(--font-display); font-weight: 600; font-size: 18px; margin
   .cell:nth-child(-n+2) { border-top: 0; }
   .cell:last-child { grid-column: 1 / -1; border-right: 0; }
 }
+
+/* recent usage */
+.recent { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: -16px; }
+.recent div { border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; background: var(--panel); display: flex; flex-direction: column; min-width: 0; }
+.recent span { color: var(--mute); font-size: 12px; }
+.recent b { font-family: var(--font-mono); font-weight: 500; font-size: 18px; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { .recent { grid-template-columns: repeat(2, 1fr); } }
+.note { margin: -24px 0 0; color: var(--mute); font-size: 13px; text-align: center; }
 
 /* activity */
 .sec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -113,7 +139,7 @@ svg.chart .line-m { fill: none; stroke: var(--accent); stroke-width: 2; }
 svg.chart .area-m { fill: var(--h1); opacity: .6; }
 svg.chart .dot-m { fill: var(--accent); }
 
-/* ranked lists */
+/* ranked lists and patterns */
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
 @media (max-width: 640px) { .two { grid-template-columns: 1fr; gap: 40px; } }
 .rank { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
@@ -122,6 +148,13 @@ svg.chart .dot-m { fill: var(--accent); }
 .rank .v { color: var(--mute); font-size: 13px; }
 .rank .t { grid-column: 1 / -1; height: 5px; border-radius: 3px; background: var(--h0); overflow: hidden; }
 .rank .t i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.pat { display: flex; align-items: flex-end; gap: 4px; height: 96px; }
+.pat div { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; min-width: 0; }
+.pat i { display: block; width: 100%; background: var(--h3); border-radius: 3px 3px 0 0; min-height: 2px; }
+.pat i.peak { background: var(--accent); }
+.patl { display: flex; gap: 4px; margin-top: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--mute); }
+.patl span { flex: 1; text-align: center; overflow: hidden; }
+.pats { margin: 10px 0 0; font-size: 13px; color: var(--mute); }
 
 /* insights */
 .ins { margin: 0; padding: 0; list-style: none; }
@@ -130,34 +163,67 @@ svg.chart .dot-m { fill: var(--accent); }
 .ins .k { color: var(--mute); }
 .ins .val { text-align: right; font-weight: 500; }
 .ins .val.dim { color: var(--mute); font-weight: 400; }
-.foot { color: var(--mute); font-size: 13px; max-width: 70ch; }
+.foot { color: var(--mute); font-size: 13px; max-width: 70ch; margin: 0; }
+.footbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: center; color: var(--mute); font-size: 13px; }
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: min(520px, calc(100% - 32px)); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 13px; z-index: 10; }
 @media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
 </style>
 </head>
 <body>
 <div class="drag"></div>
 <div class="wrap">
+  <div class="banner" id="update" hidden role="status">
+    <div class="grow"><span id="updtext"></span><span class="sub" id="updsub" hidden></span><div class="bar" id="updbar" hidden><i id="updfill"></i></div></div>
+    <button class="btn primary small" id="updbtn" type="button" hidden></button>
+  </div>
+
   <header class="profile">
     <div class="avatar" id="avatar" aria-hidden="true"></div>
     <input class="name" id="name" aria-label="Your name" value="" spellcheck="false">
     <input class="handle" id="handle" aria-label="Your handle" value="" spellcheck="false">
+    <div class="seg" id="seg" role="group" aria-label="Usage source" hidden>
+      <button type="button" data-s="all" aria-pressed="true">All</button>
+      <button type="button" data-s="code" aria-pressed="false">Claude Code</button>
+      <button type="button" data-s="chat" aria-pressed="false">Claude chat</button>
+    </div>
     <div class="srcline" id="srcline" hidden>
       <span id="srctext"></span>
       <button class="btn" id="reload" type="button">Rescan</button>
+      <button class="btn" id="importbtn" type="button">Import chat export…</button>
       <button class="btn" id="clear" type="button">Change folder…</button>
     </div>
   </header>
 
   <section class="loader" id="loader" hidden>
     <h2 id="lt">Reading your Claude Code history</h2>
-    <p id="lp">Scanning <code>~/.claude/projects</code>. This only takes a moment.</p>
-    <div class="row"><button class="btn primary" id="pickbtn" type="button" hidden>Choose projects folder</button></div>
+    <p id="lp">Scanning your projects folder. This only takes a moment.</p>
+    <div class="row">
+      <button class="btn primary" id="pickbtn" type="button" hidden>Choose projects folder</button>
+      <button class="btn" id="chatbtn" type="button" hidden>Import chat export instead…</button>
+    </div>
     <div class="bar" id="bar"><i id="barfill"></i></div>
     <div class="msg" id="msg" role="status"></div>
+    <div class="msg" id="hint" hidden>Big first scan. Token Trail remembers every file it has read, so later scans only read what changed.</div>
   </section>
 
-  <div class="wrap" id="dash" hidden style="gap:40px">
+  <section class="loader" id="empty" hidden>
+    <h2 id="et"></h2>
+    <p id="ep"></p>
+    <ol id="esteps" hidden>
+      <li>Open claude.ai, then Settings, then Privacy, then Export data.</li>
+      <li>Anthropic emails you a download link, usually within minutes.</li>
+      <li>Download the .zip and pick it here. Nothing is uploaded.</li>
+    </ol>
+    <div class="row">
+      <button class="btn primary" id="ebtn" type="button"></button>
+      <button class="link" id="elink" type="button" hidden>Open claude.ai export settings</button>
+    </div>
+  </section>
+
+  <div class="wrap" id="dash" hidden>
     <div class="strip" id="strip"></div>
+    <div class="recent" id="recent"></div>
+    <p class="note" id="note" hidden></p>
 
     <section>
       <div class="sec-head">
@@ -177,7 +243,12 @@ svg.chart .dot-m { fill: var(--accent); }
 
     <div class="two">
       <section><h2 style="margin-bottom:16px">Top models</h2><ul class="rank" id="models"></ul></section>
-      <section><h2 style="margin-bottom:16px">Top projects</h2><ul class="rank" id="projects"></ul></section>
+      <section><h2 style="margin-bottom:16px" id="projh">Top projects</h2><ul class="rank" id="projects"></ul></section>
+    </div>
+
+    <div class="two">
+      <section><h2 style="margin-bottom:16px">By weekday</h2><div class="pat" id="wday"></div><div class="patl" id="wdayl"></div><p class="pats" id="wdays"></p></section>
+      <section><h2 style="margin-bottom:16px">By hour</h2><div class="pat" id="hour"></div><div class="patl" id="hourl"></div><p class="pats" id="hours"></p></section>
     </div>
 
     <section>
@@ -185,10 +256,18 @@ svg.chart .dot-m { fill: var(--accent); }
       <ul class="ins" id="ins"></ul>
     </section>
 
-    <p class="foot">This covers Claude Code only. Chats in the Claude app are not stored in these logs. A task is one prompt and everything Claude did until your next prompt, with waits over 15 minutes trimmed.</p>
+    <p class="foot" id="foot"></p>
+  </div>
+
+  <div class="footbar">
+    <span id="ver"></span>
+    <button class="link" id="chk" type="button">Check for updates</button>
+    <span id="chkmsg"></span>
+    <button class="link" id="csv" type="button">Export CSV</button>
+    <label class="opt"><input type="checkbox" id="login"> Open at login</label>
   </div>
 </div>
-
+<div class="toast" id="toast" role="alert" hidden></div>
 
 <script src="renderer.js"></script>
 </body>

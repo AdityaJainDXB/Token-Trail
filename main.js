@@ -1,135 +1,133 @@
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const readline = require('readline');
 const { execFile } = require('child_process');
+const logs = require('./lib/logs');
+const chat = require('./lib/chat');
+const updaterLib = require('./lib/updater');
 
 const defaultDir = () => path.join(os.homedir(), '.claude', 'projects');
-const cfgFile = () => path.join(app.getPath('userData'), 'config.json');
-const aggFile = () => path.join(app.getPath('userData'), 'agg.json');
+const store = (name) => path.join(app.getPath('userData'), name);
 
-function readCfg() { try { return JSON.parse(fs.readFileSync(cfgFile(), 'utf8')); } catch (e) { return {}; } }
-function writeCfg(c) { fs.mkdirSync(app.getPath('userData'), { recursive: true }); fs.writeFileSync(cfgFile(), JSON.stringify(c)); }
-function projectsDir() { return readCfg().dir || defaultDir(); }
-
-/* ---------- log parsing ---------- */
-const pad = (n) => (n < 10 ? '0' + n : '' + n);
-const dk = (t) => { const d = new Date(t); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
-
-function emptyAgg() {
-  return { days: {}, models: {}, projects: {}, skills: {}, msgs: 0, think: 0, fast: 0, sessions: 0, files: 0, longest: { ms: 0, day: null }, source: 'logs', savedAt: Date.now() };
+function readJson(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return null; } }
+function writeJson(file, obj) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(obj));
+  fs.renameSync(tmp, file);
 }
-function add4(map, key, v) {
-  const a = map[key] || (map[key] = [0, 0, 0, 0]);
-  for (let i = 0; i < 4; i++) a[i] += v[i];
-}
+const readCfg = () => readJson(store('config.json')) || {};
+const projectsDir = () => readCfg().dir || defaultDir();
 
-function walk(dir, out) {
-  let entries;
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return out; }
-  for (const e of entries) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) walk(p, out);
-    else if (e.isFile() && e.name.endsWith('.jsonl')) out.push(p);
-  }
-  return out;
-}
-
-function parseLine(line, ctx, agg, seen, thinkSeen) {
-  let o;
-  try { o = JSON.parse(line); } catch (e) { return; }
-  const ts = o.timestamp ? Date.parse(o.timestamp) : NaN;
-  if (isNaN(ts)) return;
-  if (o.type === 'assistant' && o.message) {
-    const m = o.message;
-    const key = (m.id || '') + ':' + (o.requestId || '');
-    const content = Array.isArray(m.content) ? m.content : [];
-    for (const c of content) {
-      if (c.type === 'thinking' && m.id && !thinkSeen.has(key)) { thinkSeen.add(key); agg.think++; }
-      if (c.type === 'tool_use' && c.name === 'Skill' && c.input && c.input.skill) {
-        agg.skills[c.input.skill] = (agg.skills[c.input.skill] || 0) + 1;
-      }
-    }
-    if (!ctx.sub && !o.isSidechain) ctx.tl.push([ts, 0]);
-    const u = m.usage;
-    if (!u || m.model === '<synthetic>') return;
-    if (m.id && seen.has(key)) return;
-    if (m.id) seen.add(key);
-    const v = [u.input_tokens || 0, u.output_tokens || 0, u.cache_creation_input_tokens || 0, u.cache_read_input_tokens || 0];
-    add4(agg.days, dk(ts), v);
-    add4(agg.models, m.model || 'unknown', v);
-    add4(agg.projects, ctx.project, v);
-    agg.msgs++;
-    if (u.speed === 'fast') agg.fast++;
-  } else if (o.type === 'user') {
-    if (ctx.sub || o.isSidechain) return;
-    const mc = o.message && o.message.content;
-    let prompt = false;
-    if (typeof mc === 'string') prompt = true;
-    else if (Array.isArray(mc)) prompt = !mc.some((b) => b.type === 'tool_result');
-    if (o.isMeta) prompt = false;
-    ctx.tl.push([ts, prompt ? 1 : 0]);
-  }
-}
-
-function finishTasks(ctx, agg) {
-  const tl = ctx.tl.sort((a, b) => a[0] - b[0]);
-  let cur = null;
-  const close = () => {
-    if (cur && cur.dur > agg.longest.ms) { agg.longest.ms = cur.dur; agg.longest.day = dk(cur.start); }
-  };
-  for (const e of tl) {
-    if (e[1] === 1) { close(); cur = { start: e[0], last: e[0], dur: 0 }; }
-    else if (cur) { cur.dur += Math.min(e[0] - cur.last, 15 * 60000); cur.last = e[0]; }
-  }
-  close();
-}
-
-async function readFile(file, root, agg, seen, thinkSeen) {
-  const rel = path.relative(root, file).split(path.sep);
-  const proj = rel.length > 1 ? rel[0] : 'unknown';
-  const segs = proj.split('-').filter(Boolean);
-  const ctx = { tl: [], project: segs.length ? segs[segs.length - 1] : proj, sub: rel.includes('subagents') };
-  const rl = readline.createInterface({ input: fs.createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
-  for await (const line of rl) { if (line.length > 1) parseLine(line, ctx, agg, seen, thinkSeen); }
-  if (!ctx.sub && ctx.tl.length) { agg.sessions++; finishTasks(ctx, agg); }
+/* ---------- state sent to the window ---------- */
+function loadState(extra) {
+  const code = readJson(store('agg.json'));
+  return Object.assign({ code, chat: readJson(store('chat.json')) }, extra);
 }
 
 let scanning = null;
-async function scan(sender) {
+async function scan(progress) {
   const dir = projectsDir();
-  if (!fs.existsSync(dir)) return { error: 'nofolder', dir };
-  const files = walk(dir, []);
-  const agg = emptyAgg();
-  agg.files = files.length;
-  const seen = new Set(), thinkSeen = new Set();
-  let last = 0, tokens = 0;
-  for (let i = 0; i < files.length; i++) {
-    try { await readFile(files[i], dir, agg, seen, thinkSeen); } catch (e) { /* skip unreadable file */ }
-    const now = Date.now();
-    if (now - last > 120 || i === files.length - 1) {
-      last = now;
-      tokens = Object.values(agg.days).reduce((t, a) => t + a[0] + a[1] + a[2] + a[3], 0);
-      if (!sender.isDestroyed()) sender.send('progress', { i: i + 1, n: files.length, tokens });
+  let code = null, error = null;
+  if (!fs.existsSync(dir)) {
+    error = 'nofolder';
+  } else {
+    const cache = readJson(store('entries-v' + logs.CACHE_VERSION + '.json'));
+    const r = await logs.scan(dir, cache && cache.v === logs.CACHE_VERSION ? cache.files : {}, progress);
+    if (!r.agg) {
+      error = 'empty';
+    } else {
+      code = Object.assign(r.agg, { savedAt: Date.now() });
+      try {
+        writeJson(store('agg.json'), code);
+        if (r.changed) writeJson(store('entries-v' + logs.CACHE_VERSION + '.json'), { v: logs.CACHE_VERSION, files: r.files });
+      } catch (e) { /* caches are optional */ }
     }
   }
-  if (!Object.keys(agg.days).length) return { error: 'empty', dir };
-  agg.savedAt = Date.now();
-  try { fs.mkdirSync(app.getPath('userData'), { recursive: true }); fs.writeFileSync(aggFile(), JSON.stringify(agg)); } catch (e) { /* cache is optional */ }
-  return { agg };
+  const result = { code, chat: readJson(store('chat.json')), error, dir };
+  updateTray(result);
+  return result;
+}
+
+function runScan(progress) {
+  if (!scanning) scanning = scan(progress).finally(() => { scanning = null; });
+  return scanning;
+}
+
+/* ---------- menu bar item: today's tokens ---------- */
+let tray = null, lastTotals = null;
+const fmt = (n) => (n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(n >= 1e5 ? 0 : 1) + 'K' : String(Math.round(n)));
+function todayTokens(state) {
+  const key = logs.dk(Date.now());
+  return [state.code, state.chat].reduce((t, s) => {
+    const a = s && s.days && s.days[key];
+    return t + (a ? a[0] + a[1] + a[2] + a[3] : 0);
+  }, 0);
+}
+function updateTray(state) {
+  if (process.platform !== 'darwin' || readCfg().tray === false) { if (tray) { tray.destroy(); tray = null; } return; }
+  lastTotals = state;
+  if (!tray) {
+    tray = new Tray(nativeImage.createEmpty());
+    tray.on('click', showWindow);
+  }
+  tray.setTitle('◐ ' + fmt(todayTokens(state)));
+  tray.setToolTip('Token Trail: tokens used today');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: fmt(todayTokens(state)) + ' tokens today', enabled: false },
+    { type: 'separator' },
+    { label: 'Open Token Trail', click: showWindow },
+    { label: 'Rescan now', click: () => refresh() },
+    { type: 'separator' },
+    { label: 'Hide menu bar item', click: () => { fs.writeFileSync(store('config.json'), JSON.stringify({ ...readCfg(), tray: false })); updateTray(state); } },
+    { role: 'quit' }
+  ]));
+}
+function showWindow() { if (!win || win.isDestroyed()) createWindow(); else { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } }
+
+/* Background refresh: used by the file watcher and the menu. Pushes the new state to the window. */
+async function refresh() {
+  try {
+    const r = await runScan();
+    if (win && !win.isDestroyed()) win.webContents.send('state', r);
+  } catch (e) { /* next change retries */ }
+}
+
+/* Re-scan a few seconds after Claude Code writes to its logs, so numbers move while you work. */
+let watcher = null, watchTimer = null;
+function watchLogs() {
+  try { if (watcher) watcher.close(); } catch (e) { /* already closed */ }
+  watcher = null;
+  const dir = projectsDir();
+  if (!fs.existsSync(dir)) return;
+  try {
+    watcher = fs.watch(dir, { recursive: true }, (_ev, name) => {
+      if (!name || !String(name).endsWith('.jsonl')) return;
+      clearTimeout(watchTimer);
+      watchTimer = setTimeout(refresh, 5000);
+    });
+    watcher.on('error', () => { watcher = null; });
+  } catch (e) { /* recursive watch unsupported here; focus-rescan still works */ }
 }
 
 /* ---------- ipc ---------- */
-ipcMain.handle('scan', (ev) => {
-  if (!scanning) scanning = scan(ev.sender).finally(() => { scanning = null; });
-  return scanning;
+ipcMain.handle('scan', (ev) => runScan((p) => { if (!ev.sender.isDestroyed()) ev.sender.send('progress', p); }));
+ipcMain.handle('saveCsv', async (ev, text, name) => {
+  const w = BrowserWindow.fromWebContents(ev.sender);
+  const r = await dialog.showSaveDialog(w, { defaultPath: path.join(app.getPath('downloads'), String(name || 'token-trail.csv').replace(/[^\w.-]/g, '_')), filters: [{ name: 'CSV', extensions: ['csv'] }] });
+  if (r.canceled || !r.filePath) return false;
+  fs.writeFileSync(r.filePath, String(text));
+  shell.showItemInFolder(r.filePath);
+  return true;
 });
+ipcMain.handle('login:get', () => app.getLoginItemSettings().openAtLogin);
+ipcMain.handle('login:set', (_ev, on) => { app.setLoginItemSettings({ openAtLogin: !!on }); return app.getLoginItemSettings().openAtLogin; });
+ipcMain.handle('cached', () => loadState());
 ipcMain.handle('whoami', () => new Promise((resolve) => {
   const username = os.userInfo().username;
   execFile('id', ['-F'], (err, out) => resolve({ name: (!err && out.trim()) || username, handle: '@' + username }));
 }));
-ipcMain.handle('cached', () => { try { return JSON.parse(fs.readFileSync(aggFile(), 'utf8')); } catch (e) { return null; } });
 ipcMain.handle('chooseFolder', async (ev) => {
   const win = BrowserWindow.fromWebContents(ev.sender);
   const startDir = fs.existsSync(defaultDir()) ? defaultDir() : os.homedir();
@@ -139,14 +137,45 @@ ipcMain.handle('chooseFolder', async (ev) => {
     properties: ['openDirectory', 'showHiddenFiles']
   });
   if (r.canceled || !r.filePaths.length) return false;
-  writeCfg({ ...readCfg(), dir: r.filePaths[0] });
-  try { fs.unlinkSync(aggFile()); } catch (e) { /* none cached */ }
+  fs.writeFileSync(store('config.json'), JSON.stringify({ ...readCfg(), dir: r.filePaths[0] }));
+  try { fs.unlinkSync(store('agg.json')); } catch (e) { /* none cached */ }
+  watchLogs();
   return true;
 });
+ipcMain.handle('importChat', async (ev) => {
+  const win = BrowserWindow.fromWebContents(ev.sender);
+  const r = await dialog.showOpenDialog(win, {
+    title: 'Choose your Claude data export',
+    message: 'Pick the .zip from Anthropic, or the conversations.json inside it.',
+    defaultPath: app.getPath('downloads'),
+    filters: [{ name: 'Claude export', extensions: ['zip', 'json'] }],
+    properties: ['openFile']
+  });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  try {
+    const data = await chat.readExport(r.filePaths[0]);
+    writeJson(store('chat.json'), data);
+    if (lastTotals) updateTray(Object.assign({}, lastTotals, { chat: data }));
+    return { chat: data };
+  } catch (e) {
+    return { error: String((e && e.message) || e) };
+  }
+});
+ipcMain.handle('removeChat', () => { try { fs.unlinkSync(store('chat.json')); } catch (e) { /* none */ } return true; });
+ipcMain.handle('openExternal', (_ev, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });
 
-/* ---------- window ---------- */
+/* ---------- window + updater ---------- */
+let win = null;
+const updater = updaterLib.create({
+  app, shell,
+  send: (s) => { if (win && !win.isDestroyed()) win.webContents.send('update', s); }
+});
+ipcMain.handle('update:get', () => updater.get());
+ipcMain.handle('update:check', () => updater.check(true));
+ipcMain.handle('update:install', () => updater.install());
+
 function createWindow() {
-  const win = new BrowserWindow({
+  win = new BrowserWindow({
     width: 980,
     height: 860,
     minWidth: 420,
@@ -166,8 +195,39 @@ function createWindow() {
 }
 
 if (!app.requestSingleInstanceLock()) app.quit();
+app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+function buildMenu() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { label: 'Check for Updates…', click: () => { showWindow(); updater.check(true); } },
+        { type: 'separator' },
+        { label: 'Rescan', accelerator: 'CmdOrCtrl+R', click: () => { showWindow(); win.webContents.send('rescan'); } },
+        { label: 'Import Chat Export…', accelerator: 'CmdOrCtrl+I', click: () => { showWindow(); win.webContents.send('import'); } },
+        { type: 'separator' },
+        { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' }
+  ]));
+}
+
 app.whenReady().then(() => {
+  buildMenu();
   createWindow();
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  updater.init();
+  watchLogs();
+  /* Fill the menu bar item before the window asks for anything. */
+  const cached = loadState();
+  if (cached.code || cached.chat) updateTray(cached);
+  refresh();
+  app.on('activate', showWindow);
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('before-quit', () => { try { if (watcher) watcher.close(); } catch (e) { /* closing */ } updater.stop(); });

@@ -17,19 +17,27 @@ jobs:
         with:
           node-version: 20
       - run: npm install
-      - name: Build DMGs
+      - run: npm test
+      - name: Match package version to the tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: npm version "${TAG#v}" --no-git-tag-version --allow-same-version
+        env:
+          TAG: ${{ github.ref_name }}
+      - name: Build DMGs and update zips
         run: npx electron-builder --mac --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v4
         with:
-          name: mac-dmg
-          path: dist/*.dmg
+          name: mac-builds
+          path: |
+            dist/*.dmg
+            dist/*.zip
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          gh release create "$TAG" dist/*.dmg --title "Token Trail $TAG" --generate-notes \
-            || gh release upload "$TAG" dist/*.dmg --clobber
+          gh release create "$TAG" dist/*.dmg dist/*.zip --title "Token Trail $TAG" --generate-notes \
+            || gh release upload "$TAG" dist/*.dmg dist/*.zip --clobber
           gh release edit "$TAG" --draft=false
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
