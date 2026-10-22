@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const readline = require('readline');
+const { execFile } = require('child_process');
 
 const defaultDir = () => path.join(os.homedir(), '.claude', 'projects');
 const cfgFile = () => path.join(app.getPath('userData'), 'config.json');
@@ -124,6 +125,10 @@ ipcMain.handle('scan', (ev) => {
   if (!scanning) scanning = scan(ev.sender).finally(() => { scanning = null; });
   return scanning;
 });
+ipcMain.handle('whoami', () => new Promise((resolve) => {
+  const username = os.userInfo().username;
+  execFile('id', ['-F'], (err, out) => resolve({ name: (!err && out.trim()) || username, handle: '@' + username }));
+}));
 ipcMain.handle('cached', () => { try { return JSON.parse(fs.readFileSync(aggFile(), 'utf8')); } catch (e) { return null; } });
 ipcMain.handle('chooseFolder', async (ev) => {
   const win = BrowserWindow.fromWebContents(ev.sender);

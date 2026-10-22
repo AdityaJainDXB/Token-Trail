@@ -37,11 +37,14 @@
     if (!p.length) return '?';
     return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
   }
-  function loadProfile() {
-    try {
-      var p = JSON.parse(localStorage.getItem('cp:profile') || 'null');
-      if (p) { $('#name').value = p.name; $('#handle').value = p.handle; }
-    } catch (e) {}
+  async function loadProfile() {
+    var p = null;
+    try { p = JSON.parse(localStorage.getItem('cp:profile') || 'null'); } catch (e) {}
+    if (!p) {
+      try { var w = await window.api.whoami(); p = { name: w.name, handle: w.handle }; }
+      catch (e) { p = { name: 'You', handle: '@you' }; }
+    }
+    $('#name').value = p.name; $('#handle').value = p.handle;
     $('#avatar').textContent = initials($('#name').value);
   }
   function saveProfile() {
