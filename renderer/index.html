@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:">
+<title>Token Trail</title>
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Hanken+Grotesk:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one centered column, profile header on top, stat strip, heatmap, two ranked lists, insights table. */
+:root {
+  --bg: #f6f4f1;
+  --panel: #ffffff;
+  --line: #e3ded7;
+  --fg: #1d1a17;
+  --mute: #7a736b;
+  --avatar: #3f9c86;
+  --accent: #c4552d;
+  --h0: #ebe6df; --h1: #f4cdb8; --h2: #eba682; --h3: #d97b4d; --h4: #b4491f;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --font-body: "Hanken Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+  --font-mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151413; --panel: #1d1b19; --line: #2c2926; --fg: #f1ede8; --mute: #8f877d;
+    --avatar: #55b8a1; --accent: #f0885a;
+    --h0: #262320; --h1: #5a2e1f; --h2: #8f4328; --h3: #c45a30; --h4: #f0885a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151413; --panel: #1d1b19; --line: #2c2926; --fg: #f1ede8; --mute: #8f877d;
+  --avatar: #55b8a1; --accent: #f0885a;
+  --h0: #262320; --h1: #5a2e1f; --h2: #8f4328; --h3: #c45a30; --h4: #f0885a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+.drag { position: fixed; top: 0; left: 0; right: 0; height: 32px; -webkit-app-region: drag; z-index: 5; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-block: 40px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible, label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 18px; margin: 0; letter-spacing: -0.01em; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* profile */
+.profile { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding-top: 8px; }
+.avatar { width: 96px; height: 96px; border-radius: 50%; background: var(--avatar); color: #fff; display: grid; place-items: center; font-family: var(--font-display); font-weight: 600; font-size: 40px; margin-bottom: 10px; }
+.name { font-family: var(--font-display); font-weight: 600; font-size: 28px; letter-spacing: -0.02em; background: none; border: 0; border-bottom: 1px dashed transparent; text-align: center; color: var(--fg); width: 100%; max-width: 420px; padding: 2px 0; }
+.handle { font-size: 15px; color: var(--mute); background: none; border: 0; text-align: center; width: 100%; max-width: 420px; font-family: var(--font-body); padding: 2px 0; }
+.name:hover, .handle:hover, .name:focus, .handle:focus { border-bottom-color: var(--line); outline: none; }
+.srcline { display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: center; align-items: center; margin-top: 12px; font-size: 13px; color: var(--mute); }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 500; }
+.btn:hover { border-color: var(--mute); }
+.btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); padding: 10px 20px; font-size: 14px; }
+
+/* loader */
+.loader { border: 1px dashed var(--line); border-radius: 20px; padding: 32px 24px; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; background: var(--panel); }
+.loader h2 { font-size: 22px; }
+.loader p { margin: 0; max-width: 52ch; color: var(--mute); }
+.loader code { font-family: var(--font-mono); font-size: 13px; background: var(--bg); border: 1px solid var(--line); padding: 1px 6px; border-radius: 6px; color: var(--fg); }
+.loader .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.bar { width: min(360px, 100%); height: 6px; border-radius: 3px; background: var(--h0); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+.msg { font-size: 13px; color: var(--mute); min-height: 20px; }
+.msg.err { color: var(--accent); }
+
+/* stats strip */
+.strip { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line); border-radius: 22px; background: var(--panel); }
+.cell { padding: 18px 8px; text-align: center; display: flex; flex-direction: column; gap: 2px; border-left: 1px solid var(--line); min-width: 0; }
+.cell:first-child { border-left: 0; }
+.cell b { font-family: var(--font-display); font-weight: 600; font-size: 22px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.cell span { color: var(--mute); font-size: 13px; }
+@media (max-width: 640px) {
+  .strip { grid-template-columns: repeat(2, 1fr); }
+  .cell { border-left: 0; border-top: 1px solid var(--line); }
+  .cell:nth-child(odd) { border-right: 1px solid var(--line); }
+  .cell:nth-child(-n+2) { border-top: 0; }
+  .cell:last-child { grid-column: 1 / -1; border-right: 0; }
+}
+
+/* activity */
+.sec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.tabs { display: flex; gap: 4px; }
+.tab { background: none; border: 0; color: var(--mute); padding: 4px 10px; border-radius: 999px; font-size: 14px; }
+.tab[aria-pressed="true"] { color: var(--fg); background: var(--h0); }
+.scroll { overflow-x: auto; padding-bottom: 6px; }
+.inner { min-width: 720px; }
+.months { display: grid; grid-template-columns: repeat(53, 1fr); margin-top: 8px; font-size: 12px; color: var(--mute); font-family: var(--font-mono); }
+.months span { grid-row: 1; white-space: nowrap; }
+.heat { display: grid; grid-template-columns: repeat(53, 1fr); grid-template-rows: repeat(7, auto); grid-auto-flow: column; gap: 3px; }
+.heat i { aspect-ratio: 1; border-radius: 3px; background: var(--h0); display: block; }
+.heat i[data-l="1"] { background: var(--h1); } .heat i[data-l="2"] { background: var(--h2); }
+.heat i[data-l="3"] { background: var(--h3); } .heat i[data-l="4"] { background: var(--h4); }
+.heat i[data-l="x"] { background: transparent; }
+.legend { display: flex; gap: 5px; align-items: center; justify-content: flex-end; font-size: 12px; color: var(--mute); margin-top: 10px; }
+.legend i { width: 11px; height: 11px; border-radius: 3px; display: block; }
+.opt { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--mute); cursor: pointer; }
+.opt input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+svg.chart { width: 100%; height: auto; display: block; }
+svg.chart text { fill: var(--mute); font-family: var(--font-mono); font-size: 11px; }
+svg.chart .grid { stroke: var(--line); stroke-width: 1; }
+svg.chart .bar-m { fill: var(--h3); }
+svg.chart .line-m { fill: none; stroke: var(--accent); stroke-width: 2; }
+svg.chart .area-m { fill: var(--h1); opacity: .6; }
+svg.chart .dot-m { fill: var(--accent); }
+
+/* ranked lists */
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+@media (max-width: 640px) { .two { grid-template-columns: 1fr; gap: 40px; } }
+.rank { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.rank li { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; min-width: 0; }
+.rank .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.rank .v { color: var(--mute); font-size: 13px; }
+.rank .t { grid-column: 1 / -1; height: 5px; border-radius: 3px; background: var(--h0); overflow: hidden; }
+.rank .t i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+
+/* insights */
+.ins { margin: 0; padding: 0; list-style: none; }
+.ins li { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+.ins li:last-child { border-bottom: 1px solid var(--line); }
+.ins .k { color: var(--mute); }
+.ins .val { text-align: right; font-weight: 500; }
+.ins .val.dim { color: var(--mute); font-weight: 400; }
+.foot { color: var(--mute); font-size: 13px; max-width: 70ch; }
+@media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
+</style>
+</head>
+<body>
+<div class="drag"></div>
+<div class="wrap">
+  <header class="profile">
+    <div class="avatar" id="avatar" aria-hidden="true">AJ</div>
+    <input class="name" id="name" aria-label="Your name" value="Aditya Jain" spellcheck="false">
+    <input class="handle" id="handle" aria-label="Your handle" value="@adityajain1225" spellcheck="false">
+    <div class="srcline" id="srcline" hidden>
+      <span id="srctext"></span>
+      <button class="btn" id="reload" type="button">Rescan</button>
+      <button class="btn" id="clear" type="button">Change folder…</button>
+    </div>
+  </header>
+
+  <section class="loader" id="loader" hidden>
+    <h2 id="lt">Reading your Claude Code history</h2>
+    <p id="lp">Scanning <code>~/.claude/projects</code>. This only takes a moment.</p>
+    <div class="row"><button class="btn primary" id="pickbtn" type="button" hidden>Choose projects folder</button></div>
+    <div class="bar" id="bar"><i id="barfill"></i></div>
+    <div class="msg" id="msg" role="status"></div>
+  </section>
+
+  <div class="wrap" id="dash" hidden style="gap:40px">
+    <div class="strip" id="strip"></div>
+
+    <section>
+      <div class="sec-head">
+        <h2>Token activity</h2>
+        <div class="tabs" role="group" aria-label="Chart view">
+          <button class="tab" data-v="daily" aria-pressed="true" type="button">Daily</button>
+          <button class="tab" data-v="weekly" aria-pressed="false" type="button">Weekly</button>
+          <button class="tab" data-v="cum" aria-pressed="false" type="button">Cumulative</button>
+        </div>
+      </div>
+      <div class="scroll"><div class="inner" id="chartbox"></div></div>
+      <div class="sec-head" style="margin:14px 0 0">
+        <label class="opt"><input type="checkbox" id="cache" checked> Count cache tokens</label>
+        <div class="legend" id="legend"></div>
+      </div>
+    </section>
+
+    <div class="two">
+      <section><h2 style="margin-bottom:16px">Top models</h2><ul class="rank" id="models"></ul></section>
+      <section><h2 style="margin-bottom:16px">Top projects</h2><ul class="rank" id="projects"></ul></section>
+    </div>
+
+    <section>
+      <h2 style="margin-bottom:12px">Insights</h2>
+      <ul class="ins" id="ins"></ul>
+    </section>
+
+    <p class="foot">This covers Claude Code only. Chats in the Claude app are not stored in these logs. A task is one prompt and everything Claude did until your next prompt, with waits over 15 minutes trimmed.</p>
+  </div>
+</div>
+
+
+<script src="renderer.js"></script>
+</body>
+</html>

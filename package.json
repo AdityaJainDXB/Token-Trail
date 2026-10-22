@@ -1,0 +1,43 @@
+{
+  "name": "token-trail",
+  "productName": "Token Trail",
+  "version": "1.0.0",
+  "description": "A profile page for your Claude Code usage: lifetime tokens, streaks, activity heatmap and insights.",
+  "main": "main.js",
+  "author": "Aditya Jain",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.adityajain.tokentrail",
+    "productName": "Token Trail",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Token-Trail-${version}-${arch}.dmg"
+    },
+    "dmg": {
+      "title": "Token Trail"
+    }
+  }
+}
