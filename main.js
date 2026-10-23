@@ -176,8 +176,8 @@ ipcMain.handle('update:install', () => updater.install());
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 980,
-    height: 860,
+    width: 1180,
+    height: 900,
     minWidth: 420,
     minHeight: 520,
     title: 'Token Trail',

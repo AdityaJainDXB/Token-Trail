@@ -22,6 +22,7 @@
   --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
   --font-body: "Hanken Grotesk", "Avenir Next", "Segoe UI", sans-serif;
   --font-mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --ease: cubic-bezier(.16, 1, .3, 1);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -49,7 +50,7 @@ body {
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
-.wrap { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+.wrap { max-width: 1080px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
 button { font: inherit; color: inherit; cursor: pointer; }
 button:focus-visible, input:focus-visible, label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 h2 { font-family: var(--font-display); font-weight: 600; font-size: 18px; margin: 0; letter-spacing: -0.01em; }
@@ -120,15 +121,48 @@ h2 { font-family: var(--font-display); font-weight: 600; font-size: 18px; margin
 .tab[aria-pressed="true"] { color: var(--fg); background: var(--h0); }
 .scroll { overflow-x: auto; padding-bottom: 6px; }
 .inner { min-width: 720px; }
-.months { display: grid; grid-template-columns: repeat(53, 1fr); margin-top: 8px; font-size: 12px; color: var(--mute); font-family: var(--font-mono); }
+.actsec { position: relative; }
+.heatsum { margin: -6px 0 14px; color: var(--mute); font-size: 14px; }
+.heatsum .num { display: inline-flex; font-family: var(--font-display); font-weight: 600; font-size: 22px; letter-spacing: -0.01em; color: var(--fg); font-variant-numeric: tabular-nums; vertical-align: -1px; }
+.ch { display: inline-block; }
+.ch.roll { animation: rollin .26s var(--ease) both; }
+@keyframes rollin { from { opacity: 0; transform: translateY(calc(var(--dir, 1) * .3em)); filter: blur(3px); } to { opacity: 1; transform: none; filter: blur(0); } }
+
+.heat { position: relative; display: flex; flex-direction: column; gap: 3px; }
+.hrow { display: grid; grid-template-columns: 26px repeat(53, 1fr); gap: 3px; align-items: center; }
+.hrow .wd { font-family: var(--font-mono); font-size: 10px; line-height: 1; color: var(--mute); }
+.hrow i { aspect-ratio: 1; border-radius: 3px; background: var(--h0); display: block; cursor: default; outline-offset: 1px; transition: background-color .3s var(--ease), opacity .25s var(--ease), transform .3s var(--ease); }
+.heat.wave i { transition-delay: var(--wave, 0ms); }
+.heat[data-reveal="hidden"] i { opacity: 0; transform: scale(.55); }
+.hrow i[data-l="1"] { background: var(--h1); } .hrow i[data-l="2"] { background: var(--h2); }
+.hrow i[data-l="3"] { background: var(--h3); } .hrow i[data-l="4"] { background: var(--h4); }
+.hrow i[data-l="x"] { background: transparent; pointer-events: none; }
+.hrow i:not([data-l="x"]):hover { outline: 1px solid var(--mute); }
+.hrow i:focus-visible { outline: 2px solid var(--accent); }
+.heat[data-hl] i { opacity: .2; }
+.heat[data-hl="0"] i[data-l="0"], .heat[data-hl="1"] i[data-l="1"], .heat[data-hl="2"] i[data-l="2"],
+.heat[data-hl="3"] i[data-l="3"], .heat[data-hl="4"] i[data-l="4"] { opacity: 1; }
+.ring { position: absolute; pointer-events: none; border: 2px solid var(--fg); border-radius: 5px; opacity: 0; transition: left .28s var(--ease), top .28s var(--ease), width .2s, height .2s, opacity .2s; }
+.ring.on { opacity: 1; }
+.months { display: grid; grid-template-columns: 26px repeat(53, 1fr); gap: 3px; margin-top: 8px; font-size: 12px; color: var(--mute); font-family: var(--font-mono); }
 .months span { grid-row: 1; white-space: nowrap; }
-.heat { display: grid; grid-template-columns: repeat(53, 1fr); grid-template-rows: repeat(7, auto); grid-auto-flow: column; gap: 3px; }
-.heat i { aspect-ratio: 1; border-radius: 3px; background: var(--h0); display: block; }
-.heat i[data-l="1"] { background: var(--h1); } .heat i[data-l="2"] { background: var(--h2); }
-.heat i[data-l="3"] { background: var(--h3); } .heat i[data-l="4"] { background: var(--h4); }
-.heat i[data-l="x"] { background: transparent; }
-.legend { display: flex; gap: 5px; align-items: center; justify-content: flex-end; font-size: 12px; color: var(--mute); margin-top: 10px; }
-.legend i { width: 11px; height: 11px; border-radius: 3px; display: block; }
+
+.tip { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 6; }
+.tip.glide { transition: transform .28s var(--ease); }
+.tip .bubble { display: flex; flex-direction: column; align-items: center; gap: 1px; white-space: nowrap; background: var(--fg); color: var(--bg); padding: 6px 11px; border-radius: 10px; font-size: 12px; line-height: 1.3; box-shadow: 0 6px 18px rgb(0 0 0 / .18); opacity: 0; transform: translate(-50%, calc(-100% - 8px)) scale(.96); transition: opacity .16s var(--ease), transform .16s var(--ease); }
+.tip.open .bubble { opacity: 1; transform: translate(-50%, calc(-100% - 8px)) scale(1); }
+.tip .t1 { font-weight: 600; }
+.tip .t2 { opacity: .7; }
+.tip .swap { animation: rollin .22s var(--ease) both; }
+
+.legend { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex: 1; min-width: 0; font-size: 12px; color: var(--mute); }
+.legend .cap { min-height: 18px; }
+.legend .scale { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.legend .sws { display: inline-flex; gap: 5px; }
+.swb { width: 13px; height: 13px; border: 0; padding: 0; border-radius: 3px; cursor: pointer; outline-offset: 2px; }
+.swb[aria-pressed="true"] { outline: 2px solid var(--fg); }
+.dayinfo { margin: 14px 0 0; font-size: 13px; color: var(--mute); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.dayinfo b { color: var(--fg); font-weight: 500; }
 .opt { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--mute); cursor: pointer; }
 .opt input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
 svg.chart { width: 100%; height: auto; display: block; }
@@ -166,7 +200,10 @@ svg.chart .dot-m { fill: var(--accent); }
 .foot { color: var(--mute); font-size: 13px; max-width: 70ch; margin: 0; }
 .footbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: center; color: var(--mute); font-size: 13px; }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: min(520px, calc(100% - 32px)); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 13px; z-index: 10; }
-@media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .bar > i, .hrow i, .ring, .tip, .tip .bubble { transition: none !important; }
+  .ch.roll, .tip .swap { animation: none; }
+}
 </style>
 </head>
 <body>
@@ -225,7 +262,7 @@ svg.chart .dot-m { fill: var(--accent); }
     <div class="recent" id="recent"></div>
     <p class="note" id="note" hidden></p>
 
-    <section>
+    <section class="actsec">
       <div class="sec-head">
         <h2>Token activity</h2>
         <div class="tabs" role="group" aria-label="Chart view">
@@ -234,11 +271,14 @@ svg.chart .dot-m { fill: var(--accent); }
           <button class="tab" data-v="cum" aria-pressed="false" type="button">Cumulative</button>
         </div>
       </div>
+      <p class="heatsum"><span class="num" id="heatnum" role="status"></span> tokens in the last year</p>
       <div class="scroll"><div class="inner" id="chartbox"></div></div>
       <div class="sec-head" style="margin:14px 0 0">
         <label class="opt"><input type="checkbox" id="cache" checked> Count cache tokens</label>
         <div class="legend" id="legend"></div>
       </div>
+      <p class="dayinfo" id="dayinfo" hidden></p>
+      <div class="tip" id="tip" aria-hidden="true"><div class="bubble"><span class="t1"></span><span class="t2"></span></div></div>
     </section>
 
     <div class="two">
@@ -269,6 +309,7 @@ svg.chart .dot-m { fill: var(--accent); }
 </div>
 <div class="toast" id="toast" role="alert" hidden></div>
 
+<script src="heatmap.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

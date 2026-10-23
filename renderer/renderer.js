@@ -281,25 +281,18 @@
     var labels = [], lastM = -1;
     weekStarts.forEach(function (d, w) { if (d.getMonth() !== lastM) { labels.push([w, MON[d.getMonth()]]); lastM = d.getMonth(); } });
 
+    /* The total under the heading covers the same 53 weeks the charts show. */
+    var rangeTotal = 0;
+    weekStarts.forEach(function (ws) {
+      for (var j = 0; j < 7; j++) { var x = new Date(ws); x.setDate(x.getDate() + j); if (x <= g.today) rangeTotal += val(dk(x.getTime())) || 0; }
+    });
+    Heat.setTotal($('#heatnum'), fmt(rangeTotal));
+
     if (VIEW === 'daily') {
-      var vals = [], cells = [];
-      for (i = 0; i < 53 * 7; i++) {
-        var dd = new Date(g.start); dd.setDate(dd.getDate() + i);
-        var fut = dd > g.today, v = fut ? -1 : (val(dk(dd.getTime())) || 0);
-        cells.push([dd, v]); if (v > 0) vals.push(v);
-      }
-      vals.sort(function (a, b) { return a - b; });
-      var q = function (p) { return vals.length ? vals[Math.min(vals.length - 1, Math.floor(vals.length * p))] : 0; };
-      var t1 = q(0.25), t2 = q(0.5), t3 = q(0.75);
-      var html = '<div class="heat">' + cells.map(function (c) {
-        var v = c[1], l = v < 0 ? 'x' : v === 0 ? '0' : v <= t1 ? '1' : v <= t2 ? '2' : v <= t3 ? '3' : '4';
-        var tip = v < 0 ? '' : ' title="' + c[0].toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) + ': ' + fmt(Math.max(v, 0)) + ' tokens"';
-        return '<i data-l="' + l + '"' + tip + '></i>';
-      }).join('') + '</div><div class="months">' + labels.map(function (m) { return '<span style="grid-column:' + (m[0] + 1) + ' / span 4">' + m[1] + '</span>'; }).join('') + '</div>';
-      box.innerHTML = html;
-      legend.innerHTML = 'Less <i style="background:var(--h0)"></i><i style="background:var(--h1)"></i><i style="background:var(--h2)"></i><i style="background:var(--h3)"></i><i style="background:var(--h4)"></i> More';
+      Heat.draw({ agg: agg, incl: incl, chatOnly: SRC === 'chat', grid: g, fmt: fmt, sum4: sum4, dk: dk, sig: SRC + ':' + incl });
       return;
     }
+    Heat.reset();
     legend.innerHTML = '';
     var wk = weekStarts.map(function (ws) {
       var t = 0;
@@ -480,6 +473,7 @@
   api.onMenu(function (what) { if (what === 'rescan') runScan(); else importChat(); });
   api.update.onState(renderUpdate);
 
+  Heat.init({ box: $('#chartbox'), legend: $('#legend'), tip: $('#tip'), info: $('#dayinfo'), scroller: document.querySelector('.scroll') });
   loadProfile();
   api.update.get().then(renderUpdate);
   api.login.get().then(function (on) { $('#login').checked = !!on; });
