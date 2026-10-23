@@ -106,3 +106,22 @@ test('swap script replaces the bundle and keeps a rollback on failure', () => {
   execFileSync('/bin/sh', [script, '999999', path.join(dir, 'nope.app'), target, '0']);
   assert.strictEqual(fs.readFileSync(path.join(target, 'Contents', 'v'), 'utf8'), 'new');
 });
+
+test('updater rejects a download that does not match the published checksum and cleans up', async () => {
+  const dir = tmp();
+  const app = { getVersion: () => '1.0.0', getPath: () => dir, isPackaged: false, on() {}, quit() {} };
+  const body = Buffer.from('not the real zip');
+  const realFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).includes('api.github.com')) {
+      return { ok: true, json: async () => ({ tag_name: 'v9.9.9', html_url: 'https://example.test', body: '', assets: [{ name: 'T-9.9.9-' + process.arch + '.zip', browser_download_url: 'https://example.test/a.zip', size: body.length, digest: 'sha256:' + '0'.repeat(64) }] }) };
+    }
+    return new Response(body, { status: 200, headers: { 'content-length': String(body.length) } });
+  };
+  try {
+    const s = await updater.create({ app, shell: { openExternal() {} }, send() {} }).check(true);
+    assert.strictEqual(s.state, 'error');
+    assert.match(s.error, /Checksum mismatch/);
+    assert.ok(!fs.existsSync(path.join(dir, 'update')), 'a failed download leaves nothing behind');
+  } finally { global.fetch = realFetch; }
+});
