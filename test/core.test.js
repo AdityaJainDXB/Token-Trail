@@ -125,3 +125,25 @@ test('updater rejects a download that does not match the published checksum and 
     assert.ok(!fs.existsSync(path.join(dir, 'update')), 'a failed download leaves nothing behind');
   } finally { global.fetch = realFetch; }
 });
+
+test('scan prices usage, groups replies into 5-hour blocks and ranks costly sessions', async () => {
+  const r = await logs.scan(fixture(), {}, () => {});
+  const per = (10 * 3 + 20 * 15 + 100 * 3 * 1.25 + 1000 * 3 * 0.1) / 1e6;
+  const usd = Object.values(r.agg.usd).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(usd - 3 * per) < 1e-9, 'three replies at sonnet prices');
+  assert.strictEqual(r.agg.unpriced, 0);
+  assert.strictEqual(r.agg.blocks.length, 2, 'the next-day reply opens a new block');
+  assert.strictEqual(r.agg.blocks[0].m, 2);
+  assert.strictEqual(r.agg.peak.t, 2 * 1130);
+  assert.strictEqual(r.agg.top[0].m, 2, 'the session with two replies ranks first');
+  assert.strictEqual(r.agg.top[0].p, 'alpha');
+});
+
+test('models without a known price are counted as unpriced, not guessed', async () => {
+  const root = tmp();
+  fs.mkdirSync(path.join(root, '-x-demo'));
+  fs.writeFileSync(path.join(root, '-x-demo', 'a.jsonl'), reply('z1', '2026-03-02T10:00:00Z', { input_tokens: 5, output_tokens: 5 }, { model: 'claude-mystery-9' }));
+  const r = await logs.scan(root, {}, () => {});
+  assert.strictEqual(r.agg.unpriced, 10);
+  assert.deepStrictEqual(r.agg.usd, {});
+});

@@ -35,7 +35,7 @@
 
   /* ---------- combining sources ---------- */
   function merge(list) {
-    var o = { days: {}, models: {}, projects: {}, skills: {}, msgs: 0, think: 0, fast: 0, sessions: 0, files: 0, conversations: 0, longest: { ms: 0, day: null }, hours: [], wdays: [] };
+    var o = { days: {}, models: {}, projects: {}, skills: {}, usd: {}, unpriced: 0, msgs: 0, think: 0, fast: 0, sessions: 0, files: 0, conversations: 0, longest: { ms: 0, day: null }, hours: [], wdays: [] };
     var i;
     for (i = 0; i < 24; i++) o.hours.push(0);
     for (i = 0; i < 7; i++) o.wdays.push(0);
@@ -48,6 +48,8 @@
         });
       });
       Object.keys(s.skills || {}).forEach(function (k) { o.skills[k] = (o.skills[k] || 0) + s.skills[k]; });
+      Object.keys(s.usd || {}).forEach(function (d) { o.usd[d] = (o.usd[d] || 0) + s.usd[d]; });
+      o.unpriced += s.unpriced || 0;
       ['msgs', 'think', 'fast', 'sessions', 'files', 'conversations'].forEach(function (k) { o[k] += s[k] || 0; });
       if (s.longest && s.longest.ms > o.longest.ms) o.longest = s.longest;
       (s.hours || []).forEach(function (v, h) { o.hours[h] += v; });
@@ -56,24 +58,11 @@
     return o;
   }
 
-  /* Rough API-equivalent cost per million tokens: [input, output]. Cache writes cost 1.25x input and
-     cache reads 0.1x input. Subscriptions are flat-rate, so this is a scale of use, not a bill. */
-  function price(model) {
-    var m = String(model).toLowerCase();
-    if (m.indexOf('haiku') >= 0) return /3-5|3\.5|3-haiku/.test(m) ? [0.8, 4] : [1, 5];
-    if (m.indexOf('sonnet') >= 0) return [3, 15];
-    if (m.indexOf('opus') >= 0) return /opus-4-1|opus-4-2025|3-opus/.test(m) ? [15, 75] : [5, 25];
-    return null;
-  }
-  function cost(models) {
-    var total = 0, unpriced = 0;
-    Object.keys(models).forEach(function (k) {
-      var p = price(k), a = models[k];
-      if (k === 'Claude chat') return;
-      if (!p) { unpriced += a[0] + a[1] + a[2] + a[3]; return; }
-      total += (a[0] * p[0] + a[1] * p[1] + a[2] * p[0] * 1.25 + a[3] * p[0] * 0.1) / 1e6;
-    });
-    return { usd: total, unpriced: unpriced };
+  /* The dollar value is worked out in the main process, which prices every reply by its model. */
+  function cost(agg) {
+    var usd = 0;
+    Object.keys(agg.usd).forEach(function (d) { usd += agg.usd[d]; });
+    return { usd: usd, unpriced: agg.unpriced };
   }
 
   /* ---------- profile ---------- */
@@ -102,7 +91,7 @@
   /* ---------- state ---------- */
   var DATA = { code: null, chat: null }, SRC = 'all', VIEW = 'daily', V = null, ERR = null, busy = false;
   try { SRC = localStorage.getItem('tt:src') || 'all'; } catch (e) {}
-  var lastScan = 0;
+  var lastScan = 0, BUD = 0;
 
   function sources() { return SRC === 'code' ? [DATA.code] : SRC === 'chat' ? [DATA.chat] : [DATA.code, DATA.chat]; }
 
@@ -192,7 +181,7 @@
     $('#strip').innerHTML = cells.map(function (c) { return '<div class="cell"><b>' + esc(c[0]) + '</b><span>' + c[1] + '</span></div>'; }).join('');
     $('#strip').firstChild.title = chatOnly ? 'Estimated from message length' : incl ? 'Input, output and cache tokens' : 'Input and output tokens only';
 
-    var c = cost(agg.models);
+    var c = cost(agg);
     var recent = [
       [fmt(lastDays(agg, 1, incl)), 'Today'], [fmt(lastDays(agg, 7, incl)), 'Last 7 days'], [fmt(lastDays(agg, 30, incl)), 'Last 30 days'],
       chatOnly ? [agg.msgs.toLocaleString(), 'Replies from Claude'] : [c.usd > 0 ? '~' + money(c.usd) : 'n/a', 'API-equivalent value']
@@ -218,6 +207,8 @@
     }
     ranked(agg.models, '#models'); ranked(agg.projects, '#projects');
     patterns(agg);
+    renderTop();
+    renderPulse();
 
     var skillNames = Object.keys(agg.skills), skillUses = skillNames.reduce(function (t, k) { return t + agg.skills[k]; }, 0);
     var pct = function (n) { return agg.msgs ? Math.round(n / agg.msgs * 100) : 0; };
@@ -236,6 +227,7 @@
       rows = [
         ['Fast mode', agg.fast ? pct(agg.fast) + '% of replies' : 'Not used', !agg.fast],
         ['Extended thinking', pct(agg.think) + '% of replies', false],
+        ['Cache hit rate', cacheRate(agg), false],
         ['Skills explored', String(skillNames.length), false],
         ['Total skills used', String(skillUses), false],
         ['Active days', String(activeDays), false],
@@ -254,6 +246,75 @@
     $('#foot').textContent = chatOnly
       ? 'Chat usage comes from your claude.ai data export and is estimated from message length. Re-import a newer export any time to refresh it.'
       : 'Claude Code usage is read from the logs on this Mac. A task is one prompt and everything Claude did until your next prompt, with waits over 15 minutes trimmed.' + (DATA.chat ? ' Chat tokens are estimated.' : ' Chats in the Claude app are not in these logs; import a data export to include them.');
+  }
+
+  /* ---------- session, budget and costliest sessions ---------- */
+  function hm(ms) {
+    var m = Math.max(0, Math.round(ms / 60000));
+    return m >= 60 ? Math.floor(m / 60) + 'h ' + pad(m % 60) + 'm' : m + 'm';
+  }
+  function clock(t) { return new Date(t).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); }
+  function cacheRate(agg) {
+    var fresh = 0, written = 0, read = 0;
+    Object.keys(agg.models).forEach(function (k) { var m = agg.models[k]; fresh += m[0]; written += m[2]; read += m[3]; });
+    return fresh + written + read ? Math.round(read / (fresh + written + read) * 100) + '% of input from cache' : 'None';
+  }
+  function monthSpend(code) {
+    var key = dk(Date.now()).slice(0, 7), t = 0;
+    Object.keys(code.usd || {}).forEach(function (d) { if (d.indexOf(key) === 0) t += code.usd[d]; });
+    return t;
+  }
+
+  /* The 5-hour card compares the running session with the biggest one on record, because the plan's real
+     limit is not in the logs. The budget card compares this month's API-equivalent value with a target. */
+  function renderPulse() {
+    var code = DATA.code, box = $('#pulse');
+    box.hidden = !code || SRC === 'chat';
+    if (box.hidden) return;
+    var now = Date.now(), H = 36e5, blocks = code.blocks || [], b = blocks[blocks.length - 1], peak = (code.peak && code.peak.t) || 0;
+    var sbar = $('#sbar'), smeter = sbar.parentNode;
+    if (b && now < b.s + 5 * H) {
+      var end = b.s + 5 * H, burn = b.t / Math.max((now - b.f) / H, 0.25);
+      $('#sval').textContent = fmt(b.t) + ' tokens';
+      sbar.style.width = (peak ? Math.min(100, b.t / peak * 100) : 0) + '%';
+      smeter.classList.toggle('over', peak > 0 && b.t >= peak);
+      var line = 'Started ' + clock(b.f) + ', resets ' + clock(end) + ' (in ' + hm(end - now) + '). About ' + fmt(burn) + ' tokens an hour.';
+      if (peak && b.t >= peak) line += ' This is your biggest session yet.';
+      else if (peak && burn > 0) {
+        var eta = now + (peak - b.t) / burn * H;
+        line += eta < end
+          ? ' At this pace you would match your biggest session (' + fmt(peak) + ') around ' + clock(eta) + '.'
+          : ' On pace for about ' + fmt(b.t + burn * (end - now) / H) + ' by the reset.';
+      }
+      $('#ssub').textContent = line;
+    } else {
+      $('#sval').textContent = 'None active';
+      sbar.style.width = '0%'; smeter.classList.remove('over');
+      $('#ssub').textContent = (b ? 'Your last session used ' + fmt(b.t) + ' tokens and ended around ' + clock(b.s + 5 * H) + '. ' : '') + 'A new 5-hour window starts with your next message.';
+    }
+
+    var spent = monthSpend(code), today = new Date(), day = today.getDate();
+    var dim = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate(), pace = spent / day * dim;
+    var bbar = $('#bbar'), bmeter = bbar.parentNode;
+    $('#bval').textContent = BUD ? money(spent) + ' of ' + money(BUD) : money(spent) + ' this month';
+    bbar.style.width = (BUD ? Math.min(100, spent / BUD * 100) : 0) + '%';
+    bmeter.classList.toggle('over', !!BUD && spent >= BUD);
+    $('#bsub').textContent = BUD
+      ? (spent >= BUD ? 'Over budget.' : Math.round(spent / BUD * 100) + '% used.') + ' Pace: about ' + money(pace) + ' by month end' + (pace > BUD ? ', ' + money(pace - BUD) + ' over.' : ', within budget.')
+      : 'Value at public API prices, not your bill. Set a budget to get a notification at 80% and 100%.';
+    $('#bclear').hidden = !BUD;
+    if (document.activeElement !== $('#binput')) $('#binput').value = BUD || '';
+  }
+
+  function renderTop() {
+    var rows = (DATA.code && DATA.code.top) || [], sec = $('#topsec');
+    sec.hidden = !rows.length || SRC === 'chat';
+    if (sec.hidden) return;
+    var mx = Math.max.apply(null, rows.map(function (r) { return r.u || r.t; })) || 1;
+    $('#top').innerHTML = rows.slice(0, 5).map(function (r) {
+      var v = r.u || r.t, when = new Date(r.d + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      return '<li><span class="n" title="' + plural(r.m, 'reply') + '">' + esc(r.p) + ' · ' + esc(when) + '</span><span class="v mono">' + fmt(r.t) + (r.u ? ' · ~' + money(r.u) : '') + '</span><span class="t"><i style="width:' + Math.max(2, Math.round(v / mx * 100)) + '%"></i></span></li>';
+    }).join('');
   }
 
   function bars(el, arr, tip) {
@@ -468,6 +529,16 @@
     if (await api.saveCsv(csv(), 'token-trail-usage.csv')) toast('Saved your daily usage as CSV.');
   });
   $('#login').addEventListener('change', async function () { $('#login').checked = await api.login.set($('#login').checked); });
+  $('#bform').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var v = parseFloat($('#binput').value);
+    if (!(v > 0)) { toast('Enter a monthly amount above zero.'); return; }
+    BUD = await api.budget.set(v);
+    renderPulse();
+    toast('Budget set to ' + money(BUD) + '. You get a notification at 80% and 100%.');
+  });
+  $('#bclear').addEventListener('click', async function () { BUD = await api.budget.set(0); renderPulse(); toast('Budget cleared.'); });
+  setInterval(renderPulse, 60000);
   window.addEventListener('focus', function () { if ((DATA.code || DATA.chat) && Date.now() - lastScan > 60000) runScan(); });
   api.onState(function (s) { if (busy) return; lastScan = Date.now(); if (s.code || s.chat) applyState(s); });
   api.onMenu(function (what) { if (what === 'rescan') runScan(); else importChat(); });
@@ -477,6 +548,7 @@
   loadProfile();
   api.update.get().then(renderUpdate);
   api.login.get().then(function (on) { $('#login').checked = !!on; });
+  api.budget.get().then(function (v) { BUD = v; if (V) renderPulse(); });
   (async function () {
     var cached = await api.cached();
     if (cached && (cached.code || cached.chat)) applyState(cached);

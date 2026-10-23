@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('api', {
   onMenu: (cb) => { ipcRenderer.on('rescan', () => cb('rescan')); ipcRenderer.on('import', () => cb('import')); },
   saveCsv: (text, name) => ipcRenderer.invoke('saveCsv', text, name),
   login: { get: () => ipcRenderer.invoke('login:get'), set: (on) => ipcRenderer.invoke('login:set', on) },
+  budget: { get: () => ipcRenderer.invoke('budget:get'), set: (usd) => ipcRenderer.invoke('budget:set', usd) },
   update: {
     get: () => ipcRenderer.invoke('update:get'),
     check: () => ipcRenderer.invoke('update:check'),

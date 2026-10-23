@@ -114,6 +114,20 @@ h2 { font-family: var(--font-display); font-weight: 600; font-size: 18px; margin
 @media (max-width: 640px) { .recent { grid-template-columns: repeat(2, 1fr); } }
 .note { margin: -24px 0 0; color: var(--mute); font-size: 13px; text-align: center; }
 
+/* session and budget cards */
+.pulse { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: -12px; }
+@media (max-width: 760px) { .pulse { grid-template-columns: 1fr; } }
+.pcard { border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pcard .row1 { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.pcard .k { color: var(--mute); font-size: 12px; }
+.pcard .v { font-family: var(--font-mono); font-size: 18px; font-variant-numeric: tabular-nums; }
+.pcard .sub { margin: 0; color: var(--mute); font-size: 13px; line-height: 1.45; }
+.meter { height: 6px; border-radius: 3px; background: var(--h0); overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width .5s var(--ease); }
+.meter.over i { background: #d6453a; }
+.bform { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--mute); }
+.bform input { width: 96px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 999px; padding: 5px 12px; font: inherit; }
+
 /* activity */
 .sec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .tabs { display: flex; gap: 4px; }
@@ -262,6 +276,24 @@ svg.chart .dot-m { fill: var(--accent); }
     <div class="recent" id="recent"></div>
     <p class="note" id="note" hidden></p>
 
+    <div class="pulse" id="pulse" hidden>
+      <div class="pcard" title="Claude's real limit is not in the logs, so the bar compares this session with the biggest 5-hour session you have ever had.">
+        <div class="row1"><span class="k">5-hour session</span><span class="v" id="sval"></span></div>
+        <div class="meter"><i id="sbar"></i></div>
+        <p class="sub" id="ssub"></p>
+      </div>
+      <div class="pcard">
+        <div class="row1"><span class="k">Monthly budget</span><span class="v" id="bval"></span></div>
+        <div class="meter"><i id="bbar"></i></div>
+        <p class="sub" id="bsub"></p>
+        <form class="bform" id="bform">
+          <label>API-equivalent $ <input id="binput" type="number" min="1" step="10" inputmode="decimal" placeholder="e.g. 200"></label>
+          <button class="btn" type="submit">Set</button>
+          <button class="link" id="bclear" type="button" hidden>Clear</button>
+        </form>
+      </div>
+    </div>
+
     <section class="actsec">
       <div class="sec-head">
         <h2>Token activity</h2>
@@ -290,6 +322,11 @@ svg.chart .dot-m { fill: var(--accent); }
       <section><h2 style="margin-bottom:16px">By weekday</h2><div class="pat" id="wday"></div><div class="patl" id="wdayl"></div><p class="pats" id="wdays"></p></section>
       <section><h2 style="margin-bottom:16px">By hour</h2><div class="pat" id="hour"></div><div class="patl" id="hourl"></div><p class="pats" id="hours"></p></section>
     </div>
+
+    <section id="topsec" hidden>
+      <h2 style="margin-bottom:16px">Costliest sessions</h2>
+      <ul class="rank" id="top"></ul>
+    </section>
 
     <section>
       <h2 style="margin-bottom:12px">Insights</h2>

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, Tray, Menu, nativeImage, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -47,6 +47,7 @@ async function scan(progress) {
   }
   const result = { code, chat: readJson(store('chat.json')), error, dir };
   updateTray(result);
+  checkBudget(result);
   return result;
 }
 
@@ -86,6 +87,27 @@ function updateTray(state) {
 }
 function showWindow() { if (!win || win.isDestroyed()) createWindow(); else { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } }
 
+/* ---------- monthly budget alerts ---------- */
+const monthKey = () => logs.dk(Date.now()).slice(0, 7);
+function monthSpend(state) {
+  const key = monthKey(), usd = (state.code && state.code.usd) || {};
+  return Object.keys(usd).reduce((t, d) => (d.startsWith(key) ? t + usd[d] : t), 0);
+}
+/* One notification when the month passes 80% of the budget and one at 100%, never repeated within the month. */
+function checkBudget(state) {
+  const cfg = readCfg(), budget = Number(cfg.budget) || 0;
+  if (!budget || !Notification.isSupported()) return;
+  const spent = monthSpend(state), month = monthKey();
+  const sent = cfg.alerted && cfg.alerted.m === month ? cfg.alerted.l : 0;
+  const level = spent >= budget ? 100 : spent >= budget * 0.8 ? 80 : 0;
+  if (level <= sent) return;
+  new Notification({
+    title: level === 100 ? 'Over your Claude budget' : 'Nearing your Claude budget',
+    body: 'About $' + Math.round(spent).toLocaleString() + ' of your $' + Math.round(budget).toLocaleString() + ' monthly budget (API-equivalent value) so far this month.'
+  }).show();
+  fs.writeFileSync(store('config.json'), JSON.stringify({ ...cfg, alerted: { m: month, l: level } }));
+}
+
 /* Background refresh: used by the file watcher and the menu. Pushes the new state to the window. */
 async function refresh() {
   try {
@@ -120,6 +142,14 @@ ipcMain.handle('saveCsv', async (ev, text, name) => {
   fs.writeFileSync(r.filePath, String(text));
   shell.showItemInFolder(r.filePath);
   return true;
+});
+ipcMain.handle('budget:get', () => Number(readCfg().budget) || 0);
+ipcMain.handle('budget:set', (_ev, usd) => {
+  const v = Math.max(0, Math.min(1e7, Number(usd) || 0));
+  fs.writeFileSync(store('config.json'), JSON.stringify({ ...readCfg(), budget: v, alerted: null }));
+  const state = loadState();
+  if (v && state.code) checkBudget(state);
+  return v;
 });
 ipcMain.handle('login:get', () => app.getLoginItemSettings().openAtLogin);
 ipcMain.handle('login:set', (_ev, on) => { app.setLoginItemSettings({ openAtLogin: !!on }); return app.getLoginItemSettings().openAtLogin; });

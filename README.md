@@ -8,7 +8,10 @@
 
 - **Stat strip:** lifetime tokens, peak day, longest task, longest streak, current streak.
 - **Recent usage:** today, last 7 days, last 30 days, and a rough API-equivalent value of everything you have used.
-- **Token activity:** a daily heatmap for the last year, plus weekly and cumulative views.
+- **5-hour session:** the window you are in right now, when it resets, your burn rate, and whether you are on pace to match your biggest session. Claude's real limit is not in the logs, so the bar compares against your own biggest session.
+- **Monthly budget:** set a target in API-equivalent dollars, see the month so far and the pace to month end, and get a notification at 80% and 100%.
+- **Costliest sessions:** the sessions that used the most, with their API-equivalent value, plus your cache hit rate.
+- **Token activity:** a daily heatmap for the last year with hover details, click-to-inspect days, keyboard navigation and a legend that highlights a level, plus weekly and cumulative views.
 - **Top models and top projects** (or top conversations for chat).
 - **Usage patterns:** which weekday and which hour of the day you use Claude most.
 - **Insights:** extended thinking share, fast mode, skills explored and used, active days, average per active day, sessions and replies.
