@@ -23,8 +23,19 @@ jobs:
         run: npm version "${TAG#v}" --no-git-tag-version --allow-same-version
         env:
           TAG: ${{ github.ref_name }}
+      - name: Stop Spotlight indexing so disk images can detach
+        run: sudo mdutil -a -i off || true
       - name: Build DMGs and update zips
-        run: npx electron-builder --mac --publish never
+        # One architecture at a time, retried: building both at once leaves two "Token Trail" disk
+        # images mounted together and hdiutil detach fails intermittently on the runner.
+        run: |
+          for arch in arm64 x64; do
+            for attempt in 1 2 3; do
+              npx electron-builder --mac --$arch --publish never && break
+              [ "$attempt" = 3 ] && exit 1
+              echo "Build for $arch failed (attempt $attempt), retrying"; sleep 15
+            done
+          done
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v4
