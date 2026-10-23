@@ -40,11 +40,15 @@ Everything is computed on your Mac. Nothing is uploaded.
 
 1. Download the latest `.dmg` from the [Releases](../../releases) page. Use `arm64` for Apple Silicon and `x64` for Intel.
 2. Drag Token Trail into Applications.
-3. The app is not signed with an Apple developer certificate, so the first launch needs one extra step. Right-click the app, choose Open, then Open again. Or run:
+3. The app is not notarized by Apple, so the first launch needs one extra step. The quickest way, which works on every macOS version, is to run this once in Terminal and then open the app normally:
 
 ```sh
 xattr -cr "/Applications/Token Trail.app"
 ```
+
+   Or open the app, dismiss the warning, then go to System Settings, Privacy & Security, scroll down and click **Open Anyway**. On macOS 14 and older you can also right-click the app, choose Open, then Open again.
+
+If macOS says the app is "damaged and can't be opened", you have a build from before 1.1.1 (its signature was broken). Run the `xattr` command above, or install 1.1.1 or newer.
 
 ## Updates
 

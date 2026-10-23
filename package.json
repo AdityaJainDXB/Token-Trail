@@ -17,6 +17,7 @@
   },
   "build": {
     "appId": "com.adityajain.tokentrail",
+    "afterPack": "build/adhoc-sign.js",
     "productName": "Token Trail",
     "files": [
       "main.js",
